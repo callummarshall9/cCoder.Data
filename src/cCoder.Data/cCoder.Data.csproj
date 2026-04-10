@@ -12,6 +12,7 @@
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<PackageTags>cCoder;Data;cCoder.Data</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
 
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<PrivateRepositoryUrl>https://github.com/ccoder-co-uk/cCoder.Data.git</PrivateRepositoryUrl>
@@ -19,12 +20,14 @@
 		<RepositoryUrl>https://github.com/ccoder-co-uk/cCoder.Data.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<Description>cCoder.Data</Description>
+		<Copyright>2026 Paul Ward</Copyright>
 
 		<Authors>cCoder</Authors>
 		<PackageId>cCoder.Data</PackageId>
 	</PropertyGroup>
 
 	<ItemGroup>
+		<None Include="..\..\LICENSE.txt" Pack="true" PackagePath="\" />
 		<None Include="..\..\README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
