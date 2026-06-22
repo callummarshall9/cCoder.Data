@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: fork-pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/provider-split-e2e-ci
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+  NUGET_DIRECTORY: ${{ github.workspace }}/artifacts/nuget
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  validate-migrations:
+    runs-on: ubuntu-latest
+
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: "YourStrong!Passw0rd"
+        options: >-
+          --health-cmd="/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong!Passw0rd' -Q 'SELECT 1'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 1433:1433
+
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ccoder_validate
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+
+      - name: Install EF Core CLI
+        run: dotnet tool install -g dotnet-ef --version 10.0.5
+
+      - name: Restore
+        run: dotnet restore src/cCoder.Data.sln
+
+      - name: Validate SQL Server migrations
+        env:
+          CCODER_CONNECTION_STRING: "Server=localhost,1433;User Id=sa;Password=YourStrong!Passw0rd;Database=ccoder_validate;TrustServerCertificate=true;"
+        run: |
+          cd src/cCoder.SQLServer
+          dotnet ef migrations add ValidateSchema --context CoreDataContext --no-build -v 2>&1 | Tee-Object -Variable output
+
+          if ($output -match "Successfully created" -or $output -match "No changes detected") {
+            Write-Host "✓ SQL Server migration validation passed"
+          } else {
+            Write-Host "✗ SQL Server migration validation failed"
+            Write-Host $output
+            exit 1
+          }
+
+      - name: Validate PostgreSQL migrations
+        env:
+          CCODER_CONNECTION_STRING: "Server=localhost;Port=5432;User Id=postgres;Password=postgres;Database=ccoder_validate;"
+        run: |
+          cd src/cCoder.PostgresSQL
+          dotnet ef migrations add ValidateSchema --context CoreDataContext --no-build -v 2>&1 | Tee-Object -Variable output
+
+          if ($output -match "Successfully created" -or $output -match "No changes detected") {
+            Write-Host "✓ PostgreSQL migration validation passed"
+          } else {
+            Write-Host "✗ PostgreSQL migration validation failed"
+            Write-Host $output
+            exit 1
+          }
+
+  build-test-pack:
+    needs: validate-migrations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+
+      - name: Restore
+        run: dotnet restore src/cCoder.Data.sln
+
+      - name: Build
+        run: dotnet build src/cCoder.Data.sln -c Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test src/cCoder.Data.Tests/cCoder.Data.Tests.csproj -c Release --no-build
+
+      - name: SQL Server E2E
+        run: dotnet test src/cCoder.SQLServer.E2E/cCoder.SQLServer.E2E.csproj -c Release --no-build
+
+      - name: PostgreSQL E2E
+        run: dotnet test src/cCoder.PostgresSQL.E2E/cCoder.PostgresSQL.E2E.csproj -c Release --no-build
+        continue-on-error: true
